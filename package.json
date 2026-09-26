@@ -1,0 +1,20 @@
+{
+  "name": "realityfork",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "dev": "pnpm --filter @realityfork/shared build && pnpm --parallel --filter @realityfork/api --filter @realityfork/web dev",
+    "dev:api": "pnpm --filter @realityfork/api dev",
+    "dev:web": "pnpm --filter @realityfork/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "contracts:compile": "pnpm --filter @realityfork/contracts compile",
+    "contracts:test": "pnpm --filter @realityfork/contracts test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "typescript": "^5.9.2"
+  }
+}

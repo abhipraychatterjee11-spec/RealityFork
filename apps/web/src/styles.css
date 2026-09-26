@@ -1,0 +1,40 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #102a43;
+  background: #f5f8fb;
+  font-synthesis: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+main { max-width: 1180px; margin: 0 auto; padding: 44px 28px 80px; }
+header { display: flex; justify-content: space-between; align-items: flex-start; gap: 40px; border-bottom: 1px solid #cad7e3; padding-bottom: 30px; }
+h1 { margin: 6px 0; font-size: clamp(42px, 7vw, 76px); letter-spacing: -0.055em; color: #0b2239; }
+h2 { margin: 4px 0 0; font-size: 30px; }
+h3 { margin: 12px 0 8px; }
+p { color: #526b80; line-height: 1.55; }
+.eyebrow { color: #2457bd; font-size: 12px; font-weight: 800; letter-spacing: .13em; }
+.status { color: #0b796f; font-weight: 700; white-space: nowrap; padding-top: 16px; }
+.status i { display: inline-block; width: 9px; height: 9px; margin-right: 8px; border-radius: 50%; background: #13a89e; box-shadow: 0 0 0 5px #13a89e22; }
+.summary { display: grid; grid-template-columns: repeat(3, 1fr); margin: 28px 0; background: #0b2239; color: white; }
+.summary article { padding: 24px 28px; border-right: 1px solid #ffffff28; }
+.summary strong { display: block; font-size: 34px; }
+.summary span { color: #a9bdd0; }
+.workspace { background: white; border: 1px solid #d7e1ea; padding: 30px; box-shadow: 0 16px 48px #15385b12; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+button { border: 0; padding: 11px 16px; background: #2457bd; color: white; font-weight: 750; cursor: pointer; }
+.notice { border-left: 4px solid #eab638; background: #fff8e4; padding: 14px; }
+.empty { text-align: center; padding: 70px 20px; }
+.fork-mark { width: 64px; height: 64px; margin: auto; display: grid; place-items: center; color: white; background: #138a82; border-radius: 18px; font-size: 34px; font-weight: 900; }
+.commit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 24px; }
+.commit { border: 1px solid #d5e0e9; padding: 20px; border-top: 5px solid #2457bd; }
+.commit-top { display: flex; align-items: center; justify-content: space-between; }
+.commit code { color: #6b8195; }
+.pill { padding: 4px 9px; color: white; background: #2457bd; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.pill.challenged { background: #c44a3a; }
+.pill.merged { background: #138a82; }
+dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+dt { color: #6b8195; font-size: 11px; text-transform: uppercase; }
+dd { margin: 3px 0 0; font-weight: 800; }
+.commit small { display: block; margin-top: 12px; color: #a63d31; }
+@media (max-width: 700px) { header { flex-direction: column; } .summary { grid-template-columns: 1fr; } .section-heading { align-items: flex-start; flex-direction: column; } }
+

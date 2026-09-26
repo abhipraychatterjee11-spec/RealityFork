@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model RealityCommit {
+  id                 String      @id @default(uuid())
+  commitHash         String      @unique
+  subjectId          String
+  field              String
+  value              String
+  observedAt         DateTime
+  authorId           String
+  authorRole         String
+  message            String
+  evidenceRoot       String
+  evidenceStrength   Float
+  sourceReputation   Float
+  status             CommitStatus @default(ACTIVE)
+  contradictionFlags Json
+  chainTxHash        String?
+  createdAt          DateTime    @default(now())
+  parents            CommitEdge[] @relation("child")
+  children           CommitEdge[] @relation("parent")
+  evidence           Evidence[]
+  challenges         Challenge[]
+
+  @@index([subjectId, createdAt])
+}
+
+model CommitEdge {
+  parentId String
+  childId  String
+  parent   RealityCommit @relation("parent", fields: [parentId], references: [id])
+  child    RealityCommit @relation("child", fields: [childId], references: [id])
+  @@id([parentId, childId])
+}
+
+model Evidence {
+  id              String   @id @default(uuid())
+  commitId        String
+  commit          RealityCommit @relation(fields: [commitId], references: [id])
+  kind            String
+  uri             String
+  sha256          String
+  capturedAt      DateTime
+  latitude        Float?
+  longitude       Float?
+  deviceSignature String?
+  aiRiskScore     Float?
+}
+
+model Challenge {
+  id           String   @id @default(uuid())
+  commitId     String
+  commit       RealityCommit @relation(fields: [commitId], references: [id])
+  challengerId String
+  reason       String
+  note         String
+  status       String   @default("open")
+  createdAt    DateTime @default(now())
+}
+
+enum CommitStatus {
+  ACTIVE
+  CHALLENGED
+  MERGED
+  SUPERSEDED
+}
+
