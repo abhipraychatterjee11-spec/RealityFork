@@ -33,11 +33,21 @@ async function signCommit(
   commitHash: Hex,
   evidenceRoot: Hex,
   nonce: bigint,
-  expiresAt: bigint
+  expiresAt: bigint,
+  parentA: Hex = zeroHash,
+  parentB: Hex = zeroHash
 ) {
   return account.signTypedData(buildCommitAuthorizationTypedData(
     { chainId, verifyingContract: contract },
-    { commitHash: bare(commitHash), evidenceRoot: bare(evidenceRoot), author: account.address, nonce, expiresAt }
+    {
+      commitHash: bare(commitHash),
+      evidenceRoot: bare(evidenceRoot),
+      parentA: bare(parentA),
+      parentB: bare(parentB),
+      author: account.address,
+      nonce,
+      expiresAt
+    }
   ));
 }
 
@@ -62,6 +72,61 @@ async function signChallenge(
       expiresAt
     }
   ));
+}
+
+async function signV1Commit(
+  chainId: number,
+  contract: Address,
+  account: ReturnType<typeof privateKeyToAccount>,
+  commitHash: Hex,
+  evidenceRoot: Hex,
+  nonce: bigint,
+  expiresAt: bigint
+) {
+  return account.signTypedData({
+    domain: { name: "RealityFork", version: "2", chainId, verifyingContract: contract },
+    primaryType: "RealityCommitAuthorization",
+    types: {
+      RealityCommitAuthorization: [
+        { name: "commitHash", type: "bytes32" },
+        { name: "evidenceRoot", type: "bytes32" },
+        { name: "author", type: "address" },
+        { name: "nonce", type: "uint256" },
+        { name: "expiresAt", type: "uint64" }
+      ]
+    },
+    message: { commitHash, evidenceRoot, author: account.address, nonce, expiresAt }
+  });
+}
+
+async function signV2CommitWithDomainV1(
+  chainId: number,
+  contract: Address,
+  account: ReturnType<typeof privateKeyToAccount>,
+  commitHash: Hex,
+  evidenceRoot: Hex,
+  nonce: bigint,
+  expiresAt: bigint
+) {
+  return account.signTypedData({
+    domain: { name: "RealityFork", version: "1", chainId, verifyingContract: contract },
+    primaryType: "RealityCommitAuthorizationV2",
+    types: {
+      RealityCommitAuthorizationV2: [
+        { name: "commitHash", type: "bytes32" },
+        { name: "evidenceRoot", type: "bytes32" },
+        { name: "parentA", type: "bytes32" },
+        { name: "parentB", type: "bytes32" },
+        { name: "author", type: "address" },
+        { name: "nonce", type: "uint256" },
+        { name: "expiresAt", type: "uint64" }
+      ]
+    },
+    message: {
+      commitHash, evidenceRoot, parentA: zeroHash, parentB: zeroHash,
+      author: account.address, nonce, expiresAt
+    }
+  });
 }
 
 async function future(publicClient: Awaited<ReturnType<typeof viem.getPublicClient>>) {
@@ -136,7 +201,9 @@ describe("RealityRegistry", () => {
     const commitHash = digest("fork:commit");
     const evidenceRoot = digest("fork:evidence");
     const expiresAt = await future(ctx.publicClient);
-    const signature = await signCommit(ctx.chainId, ctx.registry.address, author, commitHash, evidenceRoot, 0n, expiresAt);
+    const signature = await signCommit(
+      ctx.chainId, ctx.registry.address, author, commitHash, evidenceRoot, 0n, expiresAt, root.commitHash
+    );
     await ctx.registry.write.anchorSignedCommit(
       [commitHash, evidenceRoot, root.commitHash, zeroHash, author.address, 0n, expiresAt, signature],
       { account: ctx.relayer.account }
@@ -150,6 +217,93 @@ describe("RealityRegistry", () => {
       [digest("two-parent"), evidenceRoot, root.commitHash, root.commitHash, author.address, 3n, expiresAt, signature],
       { account: ctx.relayer.account }
     ), /InvalidParentArrangement/);
+  });
+
+  it("binds V2 root and fork authorizations to the exact submitted parent pair", async () => {
+    const ctx = await fixture();
+    const firstParent = await anchorRoot(ctx, "binding-parent-a");
+    const secondParent = await anchorRoot(ctx, "binding-parent-b");
+    const author = privateKeyToAccount(generatePrivateKey());
+    const evidenceRoot = digest("binding:evidence");
+    const expiresAt = await future(ctx.publicClient);
+
+    const rootHash = digest("binding:root");
+    const rootSignature = await signCommit(
+      ctx.chainId, ctx.registry.address, author, rootHash, evidenceRoot, 0n, expiresAt
+    );
+    await assert.rejects(ctx.registry.write.anchorSignedCommit(
+      [rootHash, evidenceRoot, firstParent.commitHash, zeroHash, author.address, 0n, expiresAt, rootSignature],
+      { account: ctx.relayer.account }
+    ), /InvalidAuthorizationSigner/);
+
+    const forkHash = digest("binding:fork");
+    const forkSignature = await signCommit(
+      ctx.chainId, ctx.registry.address, author, forkHash, evidenceRoot, 1n, expiresAt, firstParent.commitHash
+    );
+    await assert.rejects(ctx.registry.write.anchorSignedCommit(
+      [forkHash, evidenceRoot, secondParent.commitHash, zeroHash, author.address, 1n, expiresAt, forkSignature],
+      { account: ctx.relayer.account }
+    ), /InvalidAuthorizationSigner/);
+    await ctx.registry.write.anchorSignedCommit(
+      [forkHash, evidenceRoot, firstParent.commitHash, zeroHash, author.address, 1n, expiresAt, forkSignature],
+      { account: ctx.relayer.account }
+    );
+  });
+
+  it("binds V2 merges to a canonical parent pair and rejects replacement or swapping", async () => {
+    const ctx = await fixture();
+    const parents = await Promise.all([
+      anchorRoot(ctx, "merge-binding-a"),
+      anchorRoot(ctx, "merge-binding-b"),
+      anchorRoot(ctx, "merge-binding-c")
+    ]);
+    const [parentA, parentB] = [parents[0]!.commitHash, parents[1]!.commitHash].sort() as [Hex, Hex];
+    const replacement = parents[2]!.commitHash;
+    const author = privateKeyToAccount(generatePrivateKey());
+    const mergeHash = digest("merge-binding:commit");
+    const evidenceRoot = digest("merge-binding:evidence");
+    const expiresAt = await future(ctx.publicClient);
+    const signature = await signCommit(
+      ctx.chainId, ctx.registry.address, author, mergeHash, evidenceRoot, 0n, expiresAt, parentA, parentB
+    );
+    const [otherA, otherB] = [parentA, replacement].sort() as [Hex, Hex];
+    await assert.rejects(ctx.registry.write.anchorReviewedMerge(
+      [mergeHash, evidenceRoot, otherA, otherB, author.address, 0n, expiresAt, signature],
+      { account: ctx.reviewer.account }
+    ), /InvalidAuthorizationSigner/);
+    await assert.rejects(ctx.registry.write.anchorReviewedMerge(
+      [mergeHash, evidenceRoot, parentB, parentA, author.address, 0n, expiresAt, signature],
+      { account: ctx.reviewer.account }
+    ), /NonCanonicalParentOrder/);
+    await ctx.registry.write.anchorReviewedMerge(
+      [mergeHash, evidenceRoot, parentA, parentB, author.address, 0n, expiresAt, signature],
+      { account: ctx.reviewer.account }
+    );
+  });
+
+  it("independently rejects the legacy V1 commit type and V2 commits signed for domain version 1", async () => {
+    const ctx = await fixture();
+    const author = privateKeyToAccount(generatePrivateKey());
+    const commitHash = digest("legacy-v1:commit");
+    const evidenceRoot = digest("legacy-v1:evidence");
+    const expiresAt = await future(ctx.publicClient);
+    const signature = await signV1Commit(
+      ctx.chainId, ctx.registry.address, author, commitHash, evidenceRoot, 0n, expiresAt
+    );
+    await assert.rejects(ctx.registry.write.anchorSignedCommit(
+      [commitHash, evidenceRoot, zeroHash, zeroHash, author.address, 0n, expiresAt, signature],
+      { account: ctx.relayer.account }
+    ), /InvalidAuthorizationSigner/);
+    assert.equal(await ctx.registry.read.usedNonces([author.address, 0n]), false);
+    const wrongDomainHash = digest("wrong-domain-v1:commit");
+    const wrongDomainSignature = await signV2CommitWithDomainV1(
+      ctx.chainId, ctx.registry.address, author, wrongDomainHash, evidenceRoot, 1n, expiresAt
+    );
+    await assert.rejects(ctx.registry.write.anchorSignedCommit(
+      [wrongDomainHash, evidenceRoot, zeroHash, zeroHash, author.address, 1n, expiresAt, wrongDomainSignature],
+      { account: ctx.relayer.account }
+    ), /InvalidAuthorizationSigner/);
+    assert.equal(await ctx.registry.read.usedNonces([author.address, 1n]), false);
   });
 
   it("enforces chain, verifying-contract, expiry, nonce replay, and duplicate commit protection", async () => {
@@ -208,17 +362,20 @@ describe("RealityRegistry", () => {
     const mergeHash = digest("merge:commit");
     const evidenceRoot = digest("merge:evidence");
     const expiresAt = await future(ctx.publicClient);
-    const signature = await signCommit(ctx.chainId, ctx.registry.address, author, mergeHash, evidenceRoot, 0n, expiresAt);
+    const [parentA, parentB] = [a.commitHash, b.commitHash].sort() as [Hex, Hex];
+    const signature = await signCommit(
+      ctx.chainId, ctx.registry.address, author, mergeHash, evidenceRoot, 0n, expiresAt, parentA, parentB
+    );
     await assert.rejects(ctx.registry.write.anchorReviewedMerge(
-      [mergeHash, evidenceRoot, a.commitHash, b.commitHash, author.address, 0n, expiresAt, signature], { account: ctx.relayer.account }
+      [mergeHash, evidenceRoot, parentA, parentB, author.address, 0n, expiresAt, signature], { account: ctx.relayer.account }
     ), /AccessControlUnauthorizedAccount/);
     const tx = await ctx.registry.write.anchorReviewedMerge(
-      [mergeHash, evidenceRoot, a.commitHash, b.commitHash, author.address, 0n, expiresAt, signature], { account: ctx.reviewer.account }
+      [mergeHash, evidenceRoot, parentA, parentB, author.address, 0n, expiresAt, signature], { account: ctx.reviewer.account }
     );
     const receipt = await ctx.publicClient.waitForTransactionReceipt({ hash: tx });
     assert.equal(await ctx.registry.read.getCommitStatus([mergeHash]), 2);
-    assert.equal(await ctx.registry.read.getCommitStatus([a.commitHash]), 3);
-    assert.equal(await ctx.registry.read.getCommitStatus([b.commitHash]), 3);
+    assert.equal(await ctx.registry.read.getCommitStatus([parentA]), 3);
+    assert.equal(await ctx.registry.read.getCommitStatus([parentB]), 3);
     assert.equal(await ctx.registry.read.getCommitReviewer([mergeHash]), getAddress(ctx.reviewer.account.address));
     assert.equal(parseEventLogs({ abi: ctx.registry.abi, logs: receipt.logs, eventName: "CommitMerged" }).length, 1);
   });
@@ -230,7 +387,8 @@ describe("RealityRegistry", () => {
     const author = privateKeyToAccount(generatePrivateKey());
     const expiresAt = await future(ctx.publicClient);
     const evidenceRoot = digest("rules:evidence");
-    const sign = (hash: Hex, nonce: bigint) => signCommit(ctx.chainId, ctx.registry.address, author, hash, evidenceRoot, nonce, expiresAt);
+    const sign = (hash: Hex, nonce: bigint, parentA: Hex = zeroHash, parentB: Hex = zeroHash) =>
+      signCommit(ctx.chainId, ctx.registry.address, author, hash, evidenceRoot, nonce, expiresAt, parentA, parentB);
     const dupHash = digest("dup-merge");
     await assert.rejects(ctx.registry.write.anchorReviewedMerge(
       [dupHash, evidenceRoot, a.commitHash, a.commitHash, author.address, 0n, expiresAt, await sign(dupHash, 0n)], { account: ctx.reviewer.account }
@@ -240,13 +398,21 @@ describe("RealityRegistry", () => {
       [missingHash, evidenceRoot, a.commitHash, digest("missing-parent"), author.address, 1n, expiresAt, await sign(missingHash, 1n)], { account: ctx.reviewer.account }
     ), /MissingParent/);
     const firstMerge = digest("first-merge");
+    const [firstParentA, firstParentB] = [a.commitHash, b.commitHash].sort() as [Hex, Hex];
     await ctx.registry.write.anchorReviewedMerge(
-      [firstMerge, evidenceRoot, a.commitHash, b.commitHash, author.address, 2n, expiresAt, await sign(firstMerge, 2n)], { account: ctx.reviewer.account }
+      [firstMerge, evidenceRoot, firstParentA, firstParentB, author.address, 2n, expiresAt,
+        await sign(firstMerge, 2n, firstParentA, firstParentB)], { account: ctx.reviewer.account }
     );
     const c = await anchorRoot(ctx, "rules-c");
     const nextHash = digest("next-merge");
     await assert.rejects(ctx.registry.write.anchorReviewedMerge(
       [nextHash, evidenceRoot, a.commitHash, c.commitHash, author.address, 3n, expiresAt, await sign(nextHash, 3n)], { account: ctx.reviewer.account }
+    ), /ParentSuperseded/);
+    const forkHash = digest("superseded-parent-fork");
+    await assert.rejects(ctx.registry.write.anchorSignedCommit(
+      [forkHash, evidenceRoot, a.commitHash, zeroHash, author.address, 4n, expiresAt,
+        await signCommit(ctx.chainId, ctx.registry.address, author, forkHash, evidenceRoot, 4n, expiresAt, a.commitHash)],
+      { account: ctx.relayer.account }
     ), /ParentSuperseded/);
   });
 
@@ -299,9 +465,12 @@ describe("RealityRegistry", () => {
     const mergeAuthor = privateKeyToAccount(generatePrivateKey());
     const mergeHash = digest("challenge:merge");
     const mergeEvidence = digest("challenge:merge:evidence");
+    const [mergeParentA, mergeParentB] = [a.commitHash, b.commitHash].sort() as [Hex, Hex];
     await ctx.registry.write.anchorReviewedMerge(
-      [mergeHash, mergeEvidence, a.commitHash, b.commitHash, mergeAuthor.address, 0n, expiresAt,
-        await signCommit(ctx.chainId, ctx.registry.address, mergeAuthor, mergeHash, mergeEvidence, 0n, expiresAt)],
+      [mergeHash, mergeEvidence, mergeParentA, mergeParentB, mergeAuthor.address, 0n, expiresAt,
+        await signCommit(
+          ctx.chainId, ctx.registry.address, mergeAuthor, mergeHash, mergeEvidence, 0n, expiresAt, mergeParentA, mergeParentB
+        )],
       { account: ctx.reviewer.account }
     );
     const supersededChallenge = digest("challenge:superseded");

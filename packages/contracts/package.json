@@ -7,7 +7,10 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "typecheck": "tsc --noEmit",
-    "build": "hardhat compile"
+    "build": "hardhat compile",
+    "node": "hardhat node --network hardhatMainnet",
+    "deploy:local": "hardhat run scripts/deploy-local.ts --network localhost",
+    "export:abi": "hardhat run scripts/export-abi.ts"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0"

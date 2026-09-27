@@ -45,6 +45,8 @@ export type AuthorizationEnvelope = z.infer<typeof AuthorizationEnvelopeSchema>;
 export interface PreparedCommitAuthorization {
   commitHash: string;
   evidenceRoot: string;
+  parentA: string;
+  parentB: string;
 }
 
 export interface PreparedChallengeAuthorization {
@@ -125,6 +127,8 @@ export async function verifyCommitAuthorization(
     buildCommitAuthorizationTypedData(domain, {
       commitHash: prepared.commitHash,
       evidenceRoot: prepared.evidenceRoot,
+      parentA: prepared.parentA,
+      parentB: prepared.parentB,
       author: signer,
       nonce: envelope.nonce,
       expiresAt: envelope.expiresAt
@@ -132,6 +136,8 @@ export async function verifyCommitAuthorization(
     const recovered = await recoverCommitAuthorizationSigner(domain, {
       commitHash: prepared.commitHash,
       evidenceRoot: prepared.evidenceRoot,
+      parentA: prepared.parentA,
+      parentB: prepared.parentB,
       author: signer,
       nonce: envelope.nonce,
       expiresAt: envelope.expiresAt

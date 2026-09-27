@@ -24,8 +24,8 @@ contract RealityRegistry is AccessControl, EIP712 {
 
     bytes32 public constant RELAYER_ROLE = keccak256("RELAYER_ROLE");
     bytes32 public constant REVIEWER_ROLE = keccak256("REVIEWER_ROLE");
-    bytes32 public constant COMMIT_AUTHORIZATION_TYPEHASH = keccak256(
-        "RealityCommitAuthorization(bytes32 commitHash,bytes32 evidenceRoot,address author,uint256 nonce,uint64 expiresAt)"
+    bytes32 public constant COMMIT_AUTHORIZATION_V2_TYPEHASH = keccak256(
+        "RealityCommitAuthorizationV2(bytes32 commitHash,bytes32 evidenceRoot,bytes32 parentA,bytes32 parentB,address author,uint256 nonce,uint64 expiresAt)"
     );
     bytes32 public constant CHALLENGE_AUTHORIZATION_TYPEHASH = keccak256(
         "RealityChallengeAuthorization(bytes32 challengeHash,bytes32 targetCommitHash,bytes32 challengeEvidenceRoot,address challenger,uint256 nonce,uint64 expiresAt)"
@@ -43,6 +43,7 @@ contract RealityRegistry is AccessControl, EIP712 {
     error MissingParent(bytes32 parentHash);
     error InvalidParentArrangement();
     error DuplicateParents();
+    error NonCanonicalParentOrder();
     error ParentSuperseded(bytes32 parentHash);
     error SignatureExpired(uint64 expiresAt);
     error NonceAlreadyUsed(address signer, uint256 nonce);
@@ -78,7 +79,7 @@ contract RealityRegistry is AccessControl, EIP712 {
         uint64 timestamp
     );
 
-    constructor(address initialAdmin) EIP712("RealityFork", "1") {
+    constructor(address initialAdmin) EIP712("RealityFork", "2") {
         if (initialAdmin == address(0)) revert ZeroAddress();
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
     }
@@ -96,8 +97,10 @@ contract RealityRegistry is AccessControl, EIP712 {
     ) external onlyRole(RELAYER_ROLE) {
         if (parentB != bytes32(0)) revert InvalidParentArrangement();
         _validateNewAnchor(commitHash, evidenceRoot);
-        if (parentA != bytes32(0) && !_exists(parentA)) revert MissingParent(parentA);
-        _verifyCommitAuthorization(commitHash, evidenceRoot, author, nonce, expiresAt, authorSignature);
+        if (parentA != bytes32(0)) _validateForkParent(parentA);
+        _verifyCommitAuthorizationV2(
+            commitHash, evidenceRoot, parentA, bytes32(0), author, nonce, expiresAt, authorSignature
+        );
 
         uint64 timestamp = uint64(block.timestamp);
         _anchors[commitHash] = Anchor(
@@ -130,7 +133,10 @@ contract RealityRegistry is AccessControl, EIP712 {
         if (parentA == parentB) revert DuplicateParents();
         _validateMergeParent(parentA);
         _validateMergeParent(parentB);
-        _verifyCommitAuthorization(mergeHash, evidenceRoot, author, nonce, expiresAt, authorSignature);
+        if (parentA > parentB) revert NonCanonicalParentOrder();
+        _verifyCommitAuthorizationV2(
+            mergeHash, evidenceRoot, parentA, parentB, author, nonce, expiresAt, authorSignature
+        );
 
         uint64 timestamp = uint64(block.timestamp);
         _anchors[mergeHash] = Anchor(
@@ -230,9 +236,16 @@ contract RealityRegistry is AccessControl, EIP712 {
         if (_anchors[parentHash].status == Status.Superseded) revert ParentSuperseded(parentHash);
     }
 
-    function _verifyCommitAuthorization(
+    function _validateForkParent(bytes32 parentHash) private view {
+        if (!_exists(parentHash)) revert MissingParent(parentHash);
+        if (_anchors[parentHash].status == Status.Superseded) revert ParentSuperseded(parentHash);
+    }
+
+    function _verifyCommitAuthorizationV2(
         bytes32 commitHash,
         bytes32 evidenceRoot,
+        bytes32 parentA,
+        bytes32 parentB,
         address author,
         uint256 nonce,
         uint64 expiresAt,
@@ -241,7 +254,16 @@ contract RealityRegistry is AccessControl, EIP712 {
         if (author == address(0)) revert ZeroAddress();
         _validateNonceAndExpiry(author, nonce, expiresAt);
         bytes32 structHash = keccak256(
-            abi.encode(COMMIT_AUTHORIZATION_TYPEHASH, commitHash, evidenceRoot, author, nonce, expiresAt)
+            abi.encode(
+                COMMIT_AUTHORIZATION_V2_TYPEHASH,
+                commitHash,
+                evidenceRoot,
+                parentA,
+                parentB,
+                author,
+                nonce,
+                expiresAt
+            )
         );
         address recovered = ECDSA.recover(_hashTypedDataV4(structHash), signature);
         if (recovered != author) revert InvalidAuthorizationSigner(author, recovered);

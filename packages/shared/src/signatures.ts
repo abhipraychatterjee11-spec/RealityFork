@@ -5,7 +5,8 @@ import type { ChallengeInput, Evidence } from "./index.js";
 
 export const CHALLENGE_SCHEMA_VERSION = "realityfork.challenge.v1" as const;
 export const EIP712_DOMAIN_NAME = "RealityFork" as const;
-export const EIP712_DOMAIN_VERSION = "1" as const;
+export const EIP712_DOMAIN_VERSION = "2" as const;
+export const ZERO_DIGEST = "0".repeat(64) as `${string}`;
 
 export interface SignatureDomainConfig {
   chainId: number;
@@ -15,6 +16,8 @@ export interface SignatureDomainConfig {
 export interface CommitAuthorizationMessage {
   commitHash: string;
   evidenceRoot: string;
+  parentA: string;
+  parentB: string;
   author: string;
   nonce: string | bigint | number;
   expiresAt: string | bigint | number;
@@ -110,11 +113,13 @@ export function buildRealityForkDomain(config: SignatureDomainConfig) {
 export function buildCommitAuthorizationTypedData(config: SignatureDomainConfig, message: CommitAuthorizationMessage) {
   return {
     domain: buildRealityForkDomain(config),
-    primaryType: "RealityCommitAuthorization" as const,
+    primaryType: "RealityCommitAuthorizationV2" as const,
     types: {
-      RealityCommitAuthorization: [
+      RealityCommitAuthorizationV2: [
         { name: "commitHash", type: "bytes32" },
         { name: "evidenceRoot", type: "bytes32" },
+        { name: "parentA", type: "bytes32" },
+        { name: "parentB", type: "bytes32" },
         { name: "author", type: "address" },
         { name: "nonce", type: "uint256" },
         { name: "expiresAt", type: "uint64" }
@@ -123,6 +128,8 @@ export function buildCommitAuthorizationTypedData(config: SignatureDomainConfig,
     message: {
       commitHash: digestToBytes32(message.commitHash),
       evidenceRoot: digestToBytes32(message.evidenceRoot),
+      parentA: digestToBytes32(message.parentA),
+      parentB: digestToBytes32(message.parentB),
       author: normalizeWalletAddress(message.author) as Address,
       nonce: normalizeNonce(message.nonce),
       expiresAt: normalizeExpiry(message.expiresAt)

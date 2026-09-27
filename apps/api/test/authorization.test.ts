@@ -56,6 +56,8 @@ async function signedCommitBody(
     expiresAt?: number;
     commitHash?: string;
     evidenceRoot?: string;
+    parentA?: string;
+    parentB?: string;
   } = {}
 ) {
   const prepared = store.prepare(input);
@@ -67,6 +69,8 @@ async function signedCommitBody(
   const signature = await signingAccount.signTypedData(buildCommitAuthorizationTypedData(signingDomain, {
     commitHash: options.commitHash ?? prepared.commitHash,
     evidenceRoot: options.evidenceRoot ?? prepared.evidenceRoot,
+    parentA: options.parentA ?? prepared.parentA,
+    parentB: options.parentB ?? prepared.parentB,
     author: signerAddress,
     nonce,
     expiresAt
@@ -126,6 +130,38 @@ async function signedChallengeBody(
   return { input, authorization: { ...envelope, signature } };
 }
 
+async function signedV1CommitBody(store: MemoryRealityStore, input: CreateCommitInput, nonce: string) {
+  const prepared = store.prepare(input);
+  const expiresAt = now() + 3_600;
+  const signature = await accountA.signTypedData({
+    domain: { name: "RealityFork", version: "1", ...DOMAIN },
+    primaryType: "RealityCommitAuthorization",
+    types: {
+      RealityCommitAuthorization: [
+        { name: "commitHash", type: "bytes32" },
+        { name: "evidenceRoot", type: "bytes32" },
+        { name: "author", type: "address" },
+        { name: "nonce", type: "uint256" },
+        { name: "expiresAt", type: "uint64" }
+      ]
+    },
+    message: {
+      commitHash: `0x${prepared.commitHash}` as `0x${string}`,
+      evidenceRoot: `0x${prepared.evidenceRoot}` as `0x${string}`,
+      author: accountA.address,
+      nonce: BigInt(nonce),
+      expiresAt: BigInt(expiresAt)
+    }
+  });
+  return {
+    input,
+    authorization: {
+      signerAddress: accountA.address.toLowerCase(), signature, nonce, expiresAt,
+      chainId: DOMAIN.chainId, registryContractAddress: DOMAIN.verifyingContract
+    }
+  };
+}
+
 test("valid signed commit stores verified signature metadata", async () => {
   const store = new MemoryRealityStore();
   const app = await buildApp({ store, signatureDomain: DOMAIN });
@@ -152,6 +188,31 @@ test("altered commit hash and evidence root invalidate signatures without consum
   assert.equal(nonces.isUsed(accountA.address, "20"), false);
   const valid = await signedCommitBody(store, input, "20");
   assert.equal((await app.inject({ method: "POST", url: "/api/signed/commits", payload: valid })).statusCode, 201);
+  await app.close();
+});
+
+test("V2 commit authorization binds canonical parents resolved from parent IDs", async () => {
+  const store = new MemoryRealityStore();
+  const firstParent = store.create(commitInput(accountB.address, "1"));
+  const secondParent = store.create(commitInput(accountB.address, "2"));
+  const app = await buildApp({ store, signatureDomain: DOMAIN });
+  const forkInput = { ...commitInput(accountA.address, "3"), parentIds: [firstParent.id] };
+  const wrongParent = await signedCommitBody(store, forkInput, "70", { parentA: secondParent.commitHash });
+  const rejected = await app.inject({ method: "POST", url: `/api/signed/commits/${firstParent.id}/forks`, payload: wrongParent });
+  assert.equal(rejected.statusCode, 401);
+  assert.equal(rejected.json().code, "INVALID_SIGNATURE");
+  const valid = await signedCommitBody(store, forkInput, "70");
+  assert.equal((await app.inject({ method: "POST", url: `/api/signed/commits/${firstParent.id}/forks`, payload: valid })).statusCode, 201);
+  await app.close();
+});
+
+test("V1 commit authorization and domain version 1 are rejected by the V2 API verifier", async () => {
+  const store = new MemoryRealityStore();
+  const app = await buildApp({ store, signatureDomain: DOMAIN });
+  const body = await signedV1CommitBody(store, commitInput(accountA.address, "4"), "71");
+  const response = await app.inject({ method: "POST", url: "/api/signed/commits", payload: body });
+  assert.equal(response.statusCode, 401);
+  assert.equal(response.json().code, "INVALID_SIGNATURE");
   await app.close();
 });
 

@@ -42,6 +42,24 @@ export type CreateCommitInput = z.infer<typeof CreateCommitSchema>;
 export type ChallengeInput = z.infer<typeof ChallengeSchema>;
 
 export type CommitStatus = "active" | "challenged" | "merged" | "superseded";
+export type BlockchainAnchorStatus = "not_requested" | "pending" | "confirmed" | "failed";
+export type BlockchainVerificationStatus = "verified" | "not_found" | "mismatch" | "pending" | "network_unavailable";
+
+export interface BlockchainAnchorMetadata {
+  status: BlockchainAnchorStatus;
+  transactionHash?: string;
+  chainId?: number;
+  contractAddress?: string;
+  blockNumber?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  submittedAt?: string;
+  confirmedAt?: string;
+  mock: boolean;
+  verificationStatus?: BlockchainVerificationStatus;
+  verificationMessage?: string;
+  verificationMismatches?: string[];
+}
 
 export interface RealityCommit extends CreateCommitInput {
   id: string;
@@ -55,6 +73,7 @@ export interface RealityCommit extends CreateCommitInput {
   contradictionFlags: string[];
   authorization?: SignatureMetadata;
   chainTxHash?: string;
+  blockchainAnchor: BlockchainAnchorMetadata;
 }
 
 export * from "./integrity.js";
@@ -78,4 +97,5 @@ export interface ChallengeRecord extends ChallengeInput {
   challengeHash?: string;
   challengeEvidenceRoot?: string;
   authorization?: SignatureMetadata;
+  blockchainAnchor: BlockchainAnchorMetadata;
 }

@@ -1,11 +1,14 @@
 # Five-minute demo
 
-1. Open the RealityFork dashboard and show the empty record graph.
-2. Submit an official observation that Road A17 is in good condition.
-3. Submit a citizen fork with a damaged-road photo and the same subject ID.
-4. Point out the contradiction flag, evidence score and two preserved parent histories.
-5. Challenge the official branch with evidence rather than deleting it.
-6. Create a reviewed merge commit and show its two parents.
-7. Open the contract event or transaction explorer to prove that the hashes and lineage were anchored.
-8. End with the time-travel view: the audience can see what each party claimed, when it changed, and which evidence supported the resolution.
+The executable synthetic Road A17 workflow, mock fallback, local Hardhat EVM setup, speaking roles, failure responses and honest-claims checklist are maintained in [`demo-runbook.md`](demo-runbook.md).
 
+Quick fallback:
+
+```powershell
+$demoTokenBytes = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Fill($demoTokenBytes)
+$env:REVIEWER_API_TOKEN = [Convert]::ToHexString($demoTokenBytes)
+pnpm demo:mock
+```
+
+The output must say `SIMULATED` and `mock=true`. End every version of the demo with: **Anchoring proves this record history, not that any real-world observation is true.**

@@ -3,10 +3,12 @@ import {
   buildCanonicalCommitV1,
   calculateEvidenceRootV1,
   hashCanonicalCommitV1,
+  ZERO_DIGEST,
   type ChallengeInput,
   type ChallengeRecord,
   type CreateCommitInput,
   type RealityCommit,
+  type BlockchainAnchorMetadata,
   type SignatureMetadata
 } from "@realityfork/shared";
 import { detectContradictions, initialReputation, scoreEvidence } from "./scoring.js";
@@ -21,6 +23,10 @@ export class MemoryRealityStore {
 
   get(id: string): RealityCommit | undefined {
     return this.commits.get(id);
+  }
+
+  getChallenge(id: string): ChallengeRecord | undefined {
+    return this.challenges.get(id);
   }
 
   prepare(input: CreateCommitInput) {
@@ -42,6 +48,8 @@ export class MemoryRealityStore {
     return {
       evidenceRoot,
       parentCommitHashes: canonicalCommit.parentCommitHashes,
+      parentA: canonicalCommit.parentCommitHashes[0] ?? ZERO_DIGEST,
+      parentB: canonicalCommit.parentCommitHashes[1] ?? ZERO_DIGEST,
       commitHash: hashCanonicalCommitV1(canonicalCommit).hex
     };
   }
@@ -62,7 +70,8 @@ export class MemoryRealityStore {
       evidenceStrength: scoreEvidence(input.evidence),
       sourceReputation: initialReputation(input.authorRole),
       contradictionFlags,
-      authorization
+      authorization,
+      blockchainAnchor: { status: "not_requested", mock: true }
     };
     this.commits.set(id, commit);
     return commit;
@@ -84,10 +93,36 @@ export class MemoryRealityStore {
       createdAt: new Date().toISOString(),
       status: "open",
       ...integrity,
-      authorization
+      authorization,
+      blockchainAnchor: { status: "not_requested", mock: true }
     };
     this.challenges.set(challenge.id, challenge);
     return challenge;
+  }
+
+  updateCommitAnchor(id: string, anchor: BlockchainAnchorMetadata): RealityCommit {
+    const commit = this.commits.get(id);
+    if (!commit) throw new Error("Commit not found");
+    commit.blockchainAnchor = anchor;
+    commit.chainTxHash = anchor.transactionHash;
+    return commit;
+  }
+
+  updateChallengeAnchor(id: string, anchor: BlockchainAnchorMetadata): ChallengeRecord {
+    const challenge = this.challenges.get(id);
+    if (!challenge) throw new Error("Challenge not found");
+    challenge.blockchainAnchor = anchor;
+    return challenge;
+  }
+
+  confirmReviewedMerge(id: string): RealityCommit {
+    const merge = this.commits.get(id);
+    if (!merge || merge.parentIds.length !== 2) throw new Error("Reviewed merge not found");
+    const parents = merge.parentIds.map((parentId) => this.commits.get(parentId));
+    if (parents.some((parent) => !parent)) throw new Error("Merge parent not found");
+    merge.status = "merged";
+    for (const parent of parents) parent!.status = "superseded";
+    return merge;
   }
 
   history(subjectId: string): RealityCommit[] {

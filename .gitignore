@@ -8,4 +8,4 @@ coverage/
 artifacts/
 cache/
 typechain-types/
-
+packages/contracts/deployments/*.json

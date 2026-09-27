@@ -1,6 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "module": "ESNext", "moduleResolution": "Bundler", "noEmit": true },
-  "include": ["hardhat.config.ts", "test/**/*.ts"]
+  "include": ["hardhat.config.ts", "scripts/**/*.ts", "test/**/*.ts"]
 }
-

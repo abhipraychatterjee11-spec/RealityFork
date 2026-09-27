@@ -112,3 +112,7 @@ The Solidity representation of the root commit is `0x4be70e86f5c78d3f2418e5abc23
 Hashes produced by the earlier top-level JSON replacer are not V1 hashes and cannot be silently reinterpreted. Existing records must either be explicitly marked legacy or recomputed from their original complete inputs and re-anchored under an intentional migration policy. The present MVP store is in memory, so it has no durable records to migrate.
 
 Prisma's `RealityCommit.id` remains the relationship identifier and `commitHash` remains the integrity identifier. No Prisma schema change is needed for this separation, although any future persisted API must resolve parent edges before calculating the canonical payload.
+
+## Authorization V2 relationship
+
+RealityCommit V1 remains the frozen canonical hash format. The separate `RealityCommitAuthorizationV2` EIP-712 message signs the resulting `commitHash`, `evidenceRoot` and the same canonical parent pair explicitly. A root maps to two zero `bytes32` values, a fork maps its sole canonical parent to `parentA` and zero to `parentB`, and a merge maps its already lexicographically sorted parents to `parentA` and `parentB`. This authorization migration does not alter any canonical JSON bytes or golden hashes above.
